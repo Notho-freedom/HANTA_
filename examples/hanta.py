@@ -1,18 +1,23 @@
-from hmac import trans_36
 from tkintermapview import TkinterMapView
+from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 from googletrans import Translator
 from PIL import Image, ImageTk
 from tkinter import StringVar
 from tkintermapview import *
 import tkinter.messagebox
+from hmac import trans_36
+from tkinter import Menu
 from tkinter import ttk
 import customtkinter
 from geopy import *
 import googletrans
+import requests
+import datetime
 import pyttsx3
 import tkinter
 import geopy
+import json
 import sys
 import os
 
@@ -22,8 +27,11 @@ PATH = os.path.dirname(os.path.realpath(__file__))
 
 def speak(texte):
     engine = pyttsx3.init()
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[2].id) #changing index changes voices but ony 0 and 1 are working he
     engine.say(texte)
     engine.runAndWait()
+
 
 class App(customtkinter.CTk):
 
@@ -41,8 +49,9 @@ class App(customtkinter.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.bind("<Command-q>", self.on_closing)
         self.bind("<Command-w>", self.on_closing)
-        self.bind('<Command-Enter>',self.trans)
         self.createcommand('tk::mac::Quit', self.on_closing)
+
+        self.geolocator = Nominatim(user_agent='HANTA')
 
 
         image = Image.open(PATH + "/test_images/bg_gradient.jpg").resize((2048, 1900))
@@ -52,7 +61,7 @@ class App(customtkinter.CTk):
         self.image_label.place(relx=0.5, rely=0.5, anchor=tkinter.CENTER)
 
         self.call('wm', 'iconphoto', self,ImageTk.PhotoImage(file=PATH + "/test_images/logo.jpg"))
-        # ============ create two CTkFrames ============
+
 
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
@@ -70,10 +79,10 @@ class App(customtkinter.CTk):
 
         self.frame_left.grid_rowconfigure(0, minsize=5)
 
-        image_2 = Image.open(PATH + "/test_images/h1.jpg").resize((300, 200))
+        image_2 = Image.open(PATH + "/test_images/h2.jpg").resize((300, 200))
         self.bg_image_2 = ImageTk.PhotoImage(image_2)
 
-        self.image_label_2 = tkinter.Label(master=self.frame_left,font=('impact',10,'bold'), image=self.bg_image_2,width=300,height=200,bd=0,justify=tkinter.CENTER)
+        self.image_label_2 = tkinter.Label(master=self.frame_left,image=self.bg_image_2,width=300,height=200,bd=0,justify=tkinter.CENTER)
         self.image_label_2.grid(pady=8, padx=10, row=0, column=0,columnspan=4)
 
 
@@ -88,6 +97,11 @@ class App(customtkinter.CTk):
                                                 text="Dark Mode",
                                                 command=self.change_mode)
         self.switch_2.grid(pady=5, padx=10, row=7, column=2)
+
+        self.switch_3 = customtkinter.CTkButton(master=self.frame_left,
+                                                text="info",
+                                                command=self.city2)
+        self.switch_3.grid(pady=5, padx=10, row=7, column=1)
 
         self.lang=StringVar()
         self.lang.set('en')
@@ -109,7 +123,7 @@ class App(customtkinter.CTk):
 
         self.map_widget = TkinterMapView(self.frame_right, width=500, height=250, corner_radius=9)
         self.map_widget.grid(row=0, rowspan=1, column=0, columnspan=5, sticky="nswe", padx=15, pady=15)
-        self.map_widget.set_address("yaoundé")
+        self.map_widget.set_address("yaounde")
 
         self.entry = customtkinter.CTkEntry(master=self.frame_left,
                                             placeholder_text="Localisation...",
@@ -172,8 +186,35 @@ class App(customtkinter.CTk):
 
         self.search_marker = None
         self.search_in_progress = False
+        # ============ create two CTkFrames ============  
 
+    def city(self, ville):
+        url_weather = "http://api.openweathermap.org/data/2.5/weather?q="+str(ville)+"&APPID=beb97c1ce62559bba4e81e28de8be095"
+        r_weather = requests.get(url_weather)
+        data = r_weather.json()
+        t = data['main']['temp']       
+        speak("Température moyenne {} dégrés Celsius".format(int(t-273.15)))
+        t_min = data['main']['temp_min']
+        t_max = data['main']['temp_max']
+        speak("Les températures varient entre {}".format(int(t_min-273.15)) + " a {} dégrés Celsius".format(int(t_max-273.15)))
+        humidite = data['main']['humidity']
+        speak("Taux d'humidité de {}".format(int(humidite)) + "%")
+        temps = data['weather'][0]['description']
+        speak("Conditions climatiques : {}".format(temps))
+        print("Conditions climatiques : {}".format(temps))
 
+    def next(ville):
+        url_forecast = "http://api.openweathermap.org/data/2.5/forecast?q="+ville+"&APPID=beb97c1ce62559bba4e81e28de8be095"
+        r_forecast = requests.get(url_forecast)
+        data = r_forecast.json()
+               
+        for i in range (0,25):
+            t = data['list'][i]['main']['temp']
+            temps = data['list'][i]['weather'][0]['description']
+            time = data['list'][i]['dt_txt']
+            speak("Previsions pour le {}".format(time))
+            speak("La temperature moyenne est de {} degres Celsius".format(t-273.15))
+            speak("Conditions climatiques : {}".format(temps))
 
     def search_event(self, event=None):
         if not self.search_in_progress:
@@ -183,12 +224,22 @@ class App(customtkinter.CTk):
 
             address = self.entry.get()
             self.search_marker = self.map_widget.set_address(address, marker=True)
-            current_position = self.map_widget.get_position()
+            
             if self.search_marker is False:
-                speak('sir; this address is not exit!')
+                speak("Adresse introuvable!")
                 self.search_marker = None
-                
+            else:
+                self.search_marker = self.map_widget.set_address(address, marker=True)
+                current_position = self.map_widget.get_position()
             self.search_in_progress = False
+
+    def city2(self):
+        address = self.entry.get()
+        self.search_marker = self.map_widget.set_address(address, marker=True)
+        if self.search_marker is not False:
+            self.location = self.geolocator.geocode(address)
+            speak(self.location.address)
+            self.city(address)
 
     def save_marker(self):
         if self.search_marker is not None:
